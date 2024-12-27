@@ -1,3 +1,5 @@
+'use client'
+
 import React, { useState } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
 
@@ -9,6 +11,7 @@ export const LoginForm: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
     try {
       await login(username, password);
     } catch (err) {

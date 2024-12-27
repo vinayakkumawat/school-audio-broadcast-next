@@ -1,3 +1,5 @@
+'use client'
+
 import React from 'react';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { Switch } from './Switch';

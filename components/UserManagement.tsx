@@ -1,3 +1,5 @@
+'use client'
+
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { UserForm } from './UserForm';

@@ -1,3 +1,5 @@
+'use client'
+
 import React from 'react';
 import { useAudioStore } from '../store/useAudioStore';
 import { Play, Trash2, Clock } from 'lucide-react';

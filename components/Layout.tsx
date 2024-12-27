@@ -1,12 +1,17 @@
-import React, { useState } from 'react';
-import { Outlet, NavLink } from 'react-router-dom';
+'use client'
+
+import React, { useState, PropsWithChildren } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useAuthStore } from '../store/useAuthStore';
 import { WebSocketStatus } from './WebSocketStatus';
 import { AdminProfile } from './AdminProfile';
 import { AudioPlayer } from './AudioPlayer';
 import { Settings, LayoutDashboard, Users, TestTube } from 'lucide-react';
 
-export const Layout: React.FC = () => {
+export const Layout: React.FC<PropsWithChildren> = ({ children }) => {
+  const pathname = usePathname();
+
   const [showAdminProfile, setShowAdminProfile] = useState(false);
   const logout = useAuthStore((state) => state.logout);
   const admin = useAuthStore((state) => state.admin);
@@ -18,49 +23,43 @@ export const Layout: React.FC = () => {
           <div className="flex justify-between h-16">
             <div className="flex items-center space-x-8">
               <h1 className="text-xl font-semibold">Audio Management System</h1>
-              
+
               <div className="hidden md:flex space-x-4">
-                <NavLink
-                  to="/dashboard"
-                  className={({ isActive }) =>
-                    `flex items-center px-3 py-2 rounded-md text-sm font-medium ${
-                      isActive
-                        ? 'bg-indigo-100 text-indigo-700'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`
-                  }
-                >
-                  <LayoutDashboard className="w-4 h-4 mr-2" />
-                  Dashboard
-                </NavLink>
+                <Link href="/dashboard" legacyBehavior>
+                  <a
+                    className={`flex items-center px-3 py-2 rounded-md text-sm font-medium ${pathname === '/dashboard'
+                      ? 'bg-indigo-100 text-indigo-700'
+                      : 'text-gray-600 hover:text-gray-900'
+                      }`}
+                  >
+                    <LayoutDashboard className="w-4 h-4 mr-2" />
+                    Dashboard
+                  </a>
+                </Link>
 
-                <NavLink
-                  to="/users"
-                  className={({ isActive }) =>
-                    `flex items-center px-3 py-2 rounded-md text-sm font-medium ${
-                      isActive
+                <Link href="/users" legacyBehavior>
+                  <a
+                    className={`flex items-center px-3 py-2 rounded-md text-sm font-medium ${pathname === '/users'
                         ? 'bg-indigo-100 text-indigo-700'
                         : 'text-gray-600 hover:text-gray-900'
-                    }`
-                  }
-                >
-                  <Users className="w-4 h-4 mr-2" />
-                  Users
-                </NavLink>
+                      }`}
+                  >
+                    <Users className="w-4 h-4 mr-2" />
+                    Users
+                  </a>
+                </Link>
 
-                <NavLink
-                  to="/testing"
-                  className={({ isActive }) =>
-                    `flex items-center px-3 py-2 rounded-md text-sm font-medium ${
-                      isActive
+                <Link href="/testing" legacyBehavior>
+                  <a
+                    className={`flex items-center px-3 py-2 rounded-md text-sm font-medium ${pathname === '/testing'
                         ? 'bg-indigo-100 text-indigo-700'
                         : 'text-gray-600 hover:text-gray-900'
-                    }`
-                  }
-                >
-                  <TestTube className="w-4 h-4 mr-2" />
-                  Testing
-                </NavLink>
+                      }`}
+                  >
+                    <TestTube className="w-4 h-4 mr-2" />
+                    Testing
+                  </a>
+                </Link>
               </div>
             </div>
 
@@ -85,11 +84,11 @@ export const Layout: React.FC = () => {
       </nav>
 
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <Outlet />
+        {children} {/* This will render the child components or pages */}
       </main>
 
       <AudioPlayer />
-      
+
       {showAdminProfile && (
         <AdminProfile onClose={() => setShowAdminProfile(false)} />
       )}

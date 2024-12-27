@@ -1,3 +1,5 @@
+'use client'
+
 import React, { useState, useRef } from 'react';
 import { Mic, Square, AlertCircle } from 'lucide-react';
 import { useWebSocket } from '../hooks/useWebSocket';

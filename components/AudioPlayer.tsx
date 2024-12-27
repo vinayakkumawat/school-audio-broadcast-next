@@ -1,3 +1,5 @@
+'use client'
+
 import React, { useEffect, useRef, useCallback } from 'react';
 import { useAudioStore } from '../store/useAudioStore';
 import { AlertCircle } from 'lucide-react';
