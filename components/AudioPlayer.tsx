@@ -17,7 +17,6 @@ export const AudioPlayer: React.FC = () => {
     setCurrentlyPlaying,
     error,
     setError,
-    isPlaying,
     setIsPlaying,
     cleanExpiredAudios,
   } = useAudioStore();

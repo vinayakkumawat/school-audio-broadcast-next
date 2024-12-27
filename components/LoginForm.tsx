@@ -15,6 +15,7 @@ export const LoginForm: React.FC = () => {
     try {
       await login(username, password);
     } catch (err) {
+      console.error(err);
       setError('Invalid credentials');
     }
   };

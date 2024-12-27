@@ -7,10 +7,19 @@ import { isAudioExpired } from '../utils/audioQueue';
 import { calculateTimeLeft, formatTimeLeft } from '../utils/time';
 import { getQueueName } from '../utils/queueHelpers';
 
+interface Audio {
+  id: string;
+  userId: string;
+  url: string;
+  createdAt: string;
+  queue: 1 | 2 | 3;
+  played: boolean;
+}
+
 export const QueueList: React.FC = () => {
   const { firstQueue, secondQueue, thirdQueue, removeAudio } = useAudioStore();
 
-  const renderQueue = (queue: any[], queueNumber: number) => (
+  const renderQueue = (queue: Audio[], queueNumber: number) => (
     <div className="mb-8">
       <h2 className="text-xl font-semibold mb-4">{getQueueName(queueNumber)}</h2>
       {queue.length === 0 ? (
@@ -24,9 +33,8 @@ export const QueueList: React.FC = () => {
             return (
               <div
                 key={audio.id}
-                className={`flex items-center justify-between bg-white p-4 rounded-lg shadow ${
-                  expired ? 'opacity-50' : ''
-                }`}
+                className={`flex items-center justify-between bg-white p-4 rounded-lg shadow ${expired ? 'opacity-50' : ''
+                  }`}
               >
                 <div className="flex items-center space-x-4">
                   <Play className="w-5 h-5 text-gray-600" />
