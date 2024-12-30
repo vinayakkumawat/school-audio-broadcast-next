@@ -36,6 +36,7 @@ const AudioDeviceSelector: React.FC<AudioDeviceSelectorProps> = ({
         setDevices(audioOutputDevices);
         setLoading(false);
       } catch (err) {
+        console.error(err);
         setError('Failed to get audio devices. Please check browser permissions.');
         setLoading(false);
       }
