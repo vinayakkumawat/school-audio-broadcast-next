@@ -4,7 +4,7 @@ import React, { useState, useRef } from 'react';
 import { Mic, Square, AlertCircle } from 'lucide-react';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useNotification } from '../hooks/useNotification';
-import { v4 as uuidv4 } from 'uuid';
+// import { v4 as uuidv4 } from 'uuid';
 
 interface VoiceRecorderProps {
   userId: string;
@@ -44,7 +44,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ userId }) => {
           
           if (socket?.connected) {
             const audioData = {
-              id: uuidv4(),
+              id: new Date().getTime().toString(),
               userId,
               url: base64Audio,
               createdAt: new Date().toISOString(),
