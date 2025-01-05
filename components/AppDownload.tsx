@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { Button } from "@/components/ui/button"
-import { SmartphoneIcon as Android, Apple } from 'lucide-react'
+import { SmartphoneIcon as Android } from 'lucide-react'
+// import { Apple } from 'lucide-react'
 
 export default function AppDownload() {
   return (
