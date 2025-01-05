@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { API_CONFIG } from '../config/api';
 import Cookies from 'js-cookie';
-import { useRouter } from 'next/navigation';
 
 interface Admin {
   id: string;
@@ -49,9 +48,10 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: true,
           });
 
-          const router = useRouter();
-          router.push('/dashboard');
+          // Use window.location for client-side navigation after state is updated
+          window.location.href = '/dashboard';
         } catch (error) {
+          console.error('Login error:', error);
           throw new Error('Login failed');
         }
       },
@@ -64,8 +64,8 @@ export const useAuthStore = create<AuthState>()(
           isAuthenticated: false,
         });
         
-        const router = useRouter();
-        router.push('/');
+        // Use window.location for client-side navigation after state is updated
+        window.location.href = '/';
       },
 
       updateProfile: async (data) => {
@@ -89,6 +89,7 @@ export const useAuthStore = create<AuthState>()(
             }));
           }
         } catch (error) {
+          console.error('Profile update error:', error);
           throw new Error('Profile update failed');
         }
       },
