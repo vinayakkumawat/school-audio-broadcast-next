@@ -25,6 +25,7 @@ export const AudioPlayer: React.FC = () => {
   const playCountRef = useRef<{ [key: string]: number }>({});
   const delaysRef = useRef<AudioDelays>({});
   const [delays, setDelays] = useState<AudioDelays>({});
+  const loadingRef = useRef<boolean>(false);
 
   const {
     firstQueue,
@@ -107,38 +108,59 @@ export const AudioPlayer: React.FC = () => {
     setDelays(prev => ({ ...prev, [audio.id]: delayInfo }));
   }, [clearDelayForAudio, isAudioInQueues, currentlyPlaying]);
 
-  const playAudio = useCallback((audio: Audio) => {
-    if (!audioRef.current || !isAudioInQueues(audio.id)) return;
+  const playAudio = useCallback(async (audio: Audio) => {
+    if (!audioRef.current || !isAudioInQueues(audio.id) || loadingRef.current) return;
 
     try {
-      if (audio.url.startsWith('data:audio')) {
-        audioRef.current.src = audio.url;
-      } else {
+      loadingRef.current = true;
+
+      if (!audio.url.startsWith('data:audio')) {
         setError('Invalid audio format');
         moveToNextQueue(audio);
+        loadingRef.current = false;
         return;
       }
 
       // Clear any existing delays for this audio
       clearDelayForAudio(audio.id);
 
-      audioRef.current.play()
-        .then(() => {
-          setCurrentlyPlaying(audio);
-          setIsPlaying(true);
-          setError(null);
-        })
-        .catch((error) => {
-          console.error('Audio playback error:', error);
-          setError('Failed to play audio file');
-          setIsPlaying(false);
-          moveToNextQueue(audio);
-        });
+      // Reset the audio element
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+
+      // Set new source
+      audioRef.current.src = audio.url;
+
+      // Wait for the audio to be loaded
+      await new Promise((resolve, reject) => {
+        if (!audioRef.current) return reject(new Error('No audio element'));
+
+        const onCanPlay = () => {
+          audioRef.current?.removeEventListener('canplay', onCanPlay);
+          resolve(null);
+        };
+
+        const onError = (e: Event) => {
+          audioRef.current?.removeEventListener('error', onError);
+          reject(new Error('Audio loading failed'));
+        };
+
+        audioRef.current.addEventListener('canplay', onCanPlay);
+        audioRef.current.addEventListener('error', onError);
+      });
+
+      // Now play the audio
+      await audioRef.current.play();
+      setCurrentlyPlaying(audio);
+      setIsPlaying(true);
+      setError(null);
     } catch (error) {
-      console.error('Audio setup error:', error);
-      setError('Audio playback error');
+      console.error('Audio playback error:', error);
+      setError('Failed to play audio file');
       setIsPlaying(false);
       moveToNextQueue(audio);
+    } finally {
+      loadingRef.current = false;
     }
   }, [isAudioInQueues, moveToNextQueue, setCurrentlyPlaying, setError, setIsPlaying, clearDelayForAudio]);
 
