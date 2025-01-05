@@ -141,6 +141,7 @@ export const AudioPlayer: React.FC = () => {
         };
 
         const onError = (e: Event) => {
+          console.error('Audio loading error:', e);
           audioRef.current?.removeEventListener('error', onError);
           reject(new Error('Audio loading failed'));
         };
