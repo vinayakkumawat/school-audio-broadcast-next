@@ -16,6 +16,8 @@ interface AudioState {
   setError: (error: string | null) => void;
   setIsPlaying: (isPlaying: boolean) => void;
   cleanExpiredAudios: () => void;
+  userInteracted: boolean;
+  setUserInteracted: () => void;
 }
 
 export const useAudioStore = create<AudioState>((set, get) => ({
@@ -25,6 +27,8 @@ export const useAudioStore = create<AudioState>((set, get) => ({
   currentlyPlaying: null,
   error: null,
   isPlaying: false,
+  userInteracted: false,
+  setUserInteracted: () => set({ userInteracted: true }),
 
   addAudio: (audio) => {
     const { firstQueue, secondQueue, thirdQueue } = get();
@@ -59,9 +63,14 @@ export const useAudioStore = create<AudioState>((set, get) => ({
   },
 
   moveToNextQueue: (audio) => {
-    const { removeAudio, setError } = get();
+    const { removeAudio, setError, userInteracted } = get();
     
     try {
+      if (!userInteracted) {
+        setError('Please click play to start audio playback');
+        return;
+      }
+      
       const nextQueue = getNextQueueNumber(audio.queue);
       if (!nextQueue) {
         removeAudio(audio.id);

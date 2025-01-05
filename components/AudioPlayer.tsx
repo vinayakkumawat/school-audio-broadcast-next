@@ -8,6 +8,8 @@ import { getQueueName } from '../utils/queueHelpers';
 
 export const AudioPlayer: React.FC = () => {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const playCountRef = useRef<{ [key: string]: number }>({});
+
   const {
     firstQueue,
     secondQueue,
@@ -19,6 +21,8 @@ export const AudioPlayer: React.FC = () => {
     setError,
     setIsPlaying,
     cleanExpiredAudios,
+    setUserInteracted,
+    userInteracted
   } = useAudioStore();
 
   useEffect(() => {
@@ -32,9 +36,14 @@ export const AudioPlayer: React.FC = () => {
 
   useEffect(() => {
     const nextAudio = !currentlyPlaying && findNextAudioToPlay(firstQueue, secondQueue, thirdQueue);
-    
+
     if (nextAudio && audioRef.current) {
       try {
+        // Initialize play count for new audio in first queue
+        if (nextAudio.queue === 1 && !playCountRef.current[nextAudio.id]) {
+          playCountRef.current[nextAudio.id] = 0;
+        }
+
         // Handle base64 audio data
         if (nextAudio.url.startsWith('data:audio')) {
           audioRef.current.src = nextAudio.url;
@@ -67,11 +76,32 @@ export const AudioPlayer: React.FC = () => {
 
   const handleEnded = useCallback(() => {
     if (currentlyPlaying) {
-      moveToNextQueue(currentlyPlaying);
-      setCurrentlyPlaying(null);
-      setIsPlaying(false);
+      // If audio is in first queue and hasn't played twice yet
+      if (currentlyPlaying.queue === 1 && (playCountRef.current[currentlyPlaying.id] || 0) < 1) {
+        // Increment play count
+        playCountRef.current[currentlyPlaying.id] = (playCountRef.current[currentlyPlaying.id] || 0) + 1;
+        
+        // Play the same audio again
+        if (audioRef.current) {
+          audioRef.current.currentTime = 0;
+          audioRef.current.play()
+            .catch((error) => {
+              console.error('Audio replay error:', error);
+              setError('Failed to replay audio file');
+              moveToNextQueue(currentlyPlaying);
+              setCurrentlyPlaying(null);
+              setIsPlaying(false);
+            });
+        }
+      } else {
+        // Clear play count and move to next queue
+        delete playCountRef.current[currentlyPlaying.id];
+        moveToNextQueue(currentlyPlaying);
+        setCurrentlyPlaying(null);
+        setIsPlaying(false);
+      }
     }
-  }, [currentlyPlaying, moveToNextQueue, setCurrentlyPlaying, setIsPlaying]);
+  }, [currentlyPlaying, moveToNextQueue, setCurrentlyPlaying, setIsPlaying, setError]);
 
   const handleError = useCallback(() => {
     setError('Failed to play audio file');
@@ -81,6 +111,19 @@ export const AudioPlayer: React.FC = () => {
       setIsPlaying(false);
     }
   }, [currentlyPlaying, moveToNextQueue, setCurrentlyPlaying, setError, setIsPlaying]);
+
+  if (!userInteracted) {
+    return (
+      <div className='fixed flex items-center justify-center bottom-0 w-full bg-white border-t border-gray-200 p-4'>
+        <button
+          onClick={() => setUserInteracted()}
+          className="p-2 text-sm text-gray-800 border border-gray-300 rounded-full"
+        >
+          Click here to Enable Audio
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed bottom-0 w-full bg-white border-t border-gray-200">
@@ -103,6 +146,11 @@ export const AudioPlayer: React.FC = () => {
         {currentlyPlaying && (
           <div className="mt-2 text-sm text-gray-500">
             Now playing: Audio {currentlyPlaying.id} ({getQueueName(currentlyPlaying.queue)})
+            {currentlyPlaying.queue === 1 && (
+              <span className="ml-2">
+                (Play {(playCountRef.current[currentlyPlaying.id] || 0) + 1}/2)
+              </span>
+            )}
           </div>
         )}
       </div>
