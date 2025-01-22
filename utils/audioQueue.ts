@@ -1,6 +1,6 @@
 import { Audio } from '../types';
 
-const EXPIRY_TIME = 10 * 60 * 1000; // 10 minutes in milliseconds
+const EXPIRY_TIME = 3 * 60 * 1000; // 10 minutes in milliseconds
 
 export const isAudioExpired = (audio: Audio): boolean => {
   const createdAt = new Date(audio.createdAt).getTime();
