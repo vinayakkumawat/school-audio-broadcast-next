@@ -130,17 +130,37 @@ export const AudioPlayer: React.FC = () => {
     console.log('Audio playback ended');
     if (currentlyPlaying) {
       const prevPlayCount = currentlyPlaying.playCount;
+      const prevStatus = currentlyPlaying.status;
+      
       // Update the status first
       updateAudioStatus(currentlyPlaying.id);
-      setCurrentlyPlaying(null);
-      setIsPlaying(false);
       
-      // Log the transition
-      console.log('Audio transition:', {
+      // Get the updated audio to check its new state
+      const updatedAudio = audioList.find(a => a.id === currentlyPlaying.id);
+      console.log('Audio state after update:', {
         id: currentlyPlaying.id,
         prevPlayCount,
-        status: currentlyPlaying.status
+        prevStatus,
+        newPlayCount: updatedAudio?.playCount,
+        newStatus: updatedAudio?.status
       });
+      
+      // Clear currently playing and isPlaying state
+      setCurrentlyPlaying(null);
+      setIsPlaying(false);
+
+      // If the audio is not completed, try to play the next one immediately
+      if (updatedAudio && updatedAudio.status !== 'COMPLETED') {
+        const nextAudio = getNextAudioToPlay();
+        if (nextAudio) {
+          console.log('Playing next audio after ended:', {
+            id: nextAudio.id,
+            status: nextAudio.status,
+            playCount: nextAudio.playCount
+          });
+          playAudio(nextAudio);
+        }
+      }
     }
   };
 

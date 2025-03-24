@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { Audio } from '../types';
 
-const WAIT_DURATION = 3000; // 30 seconds in milliseconds
+const WAIT_DURATION = 30000; // 30 seconds in milliseconds
 
 interface AudioState {
   audioList: Audio[];
@@ -85,13 +85,11 @@ export const useAudioStore = create<AudioState>((set, get) => ({
             // First play (0 -> 1)
             if (updatedAudio.playCount === 0) {
               updatedAudio.playCount = 1;
-              audio.playCount = 1;
               console.log('First burst first play:', { id: audio.id, newCount: updatedAudio.playCount });
             } 
             // Second play (1 -> 2) and transition to waiting
             else if (updatedAudio.playCount === 1) {
               updatedAudio.playCount = 2;
-              audio.playCount = 2;
               updatedAudio.status = 'WAITING_FIRST';
               updatedAudio.nextPlayTime = now + WAIT_DURATION;
               console.log('First burst second play and wait:', { id: audio.id, nextPlay: updatedAudio.nextPlayTime });
@@ -102,13 +100,11 @@ export const useAudioStore = create<AudioState>((set, get) => ({
             // First play of second burst (2 -> 3)
             if (updatedAudio.playCount === 2) {
               updatedAudio.playCount = 3;
-              audio.playCount = 3;
               console.log('Second burst first play:', { id: audio.id, newCount: updatedAudio.playCount });
             }
             // Second play of second burst (3 -> 4) and transition to waiting
             else if (updatedAudio.playCount === 3) {
               updatedAudio.playCount = 4;
-              audio.playCount = 4;
               updatedAudio.status = 'WAITING_SECOND';
               updatedAudio.nextPlayTime = now + WAIT_DURATION;
               console.log('Second burst second play and wait:', { id: audio.id, nextPlay: updatedAudio.nextPlayTime });
@@ -118,7 +114,6 @@ export const useAudioStore = create<AudioState>((set, get) => ({
           case 'FINAL_PLAY':
             // Final play (4 -> 5) and complete
             updatedAudio.playCount = 5;
-            audio.playCount = 5;
             updatedAudio.status = 'COMPLETED';
             updatedAudio.nextPlayTime = null;
             console.log('Final play and complete:', { id: audio.id });
@@ -151,29 +146,58 @@ export const useAudioStore = create<AudioState>((set, get) => ({
     // If something is currently playing, don't play anything else
     if (currentlyPlaying) return null;
 
-    // First, check for any audio in FIRST_BURST
-    const firstBurstAudio = audioList.find(audio => 
-      audio.status === 'FIRST_BURST' && audio.playCount < 2
-    );
-    if (firstBurstAudio) return firstBurstAudio;
-
-    // Check for any waiting audio that's ready
+    // First, check for any waiting audio that's ready
     const waitingAudio = audioList.find(audio => 
       (audio.status === 'WAITING_FIRST' || audio.status === 'WAITING_SECOND') &&
       audio.nextPlayTime && now >= audio.nextPlayTime
     );
-    if (waitingAudio) return waitingAudio;
+    if (waitingAudio) {
+      console.log('Found waiting audio ready:', { 
+        id: waitingAudio.id, 
+        status: waitingAudio.status,
+        playCount: waitingAudio.playCount,
+        nextPlayTime: waitingAudio.nextPlayTime
+      });
+      return waitingAudio;
+    }
+
+    // Then check for any audio in FIRST_BURST
+    const firstBurstAudio = audioList.find(audio => 
+      audio.status === 'FIRST_BURST' && audio.playCount === 0
+    );
+    if (firstBurstAudio) {
+      console.log('Found first burst audio:', { 
+        id: firstBurstAudio.id, 
+        status: firstBurstAudio.status,
+        playCount: firstBurstAudio.playCount
+      });
+      return firstBurstAudio;
+    }
 
     // Then check for any audio in SECOND_BURST
     const secondBurstAudio = audioList.find(audio => 
-      audio.status === 'SECOND_BURST' && audio.playCount < 4
+      audio.status === 'SECOND_BURST' && audio.playCount === 2
     );
-    if (secondBurstAudio) return secondBurstAudio;
+    if (secondBurstAudio) {
+      console.log('Found second burst audio:', { 
+        id: secondBurstAudio.id, 
+        status: secondBurstAudio.status,
+        playCount: secondBurstAudio.playCount
+      });
+      return secondBurstAudio;
+    }
 
     // Finally, check for any audio ready for its final play
     const finalAudio = audioList.find(audio => 
       audio.status === 'FINAL_PLAY'
     );
+    if (finalAudio) {
+      console.log('Found final play audio:', { 
+        id: finalAudio.id, 
+        status: finalAudio.status,
+        playCount: finalAudio.playCount
+      });
+    }
     return finalAudio || null;
   },
 
