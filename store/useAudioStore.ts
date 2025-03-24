@@ -64,76 +64,88 @@ export const useAudioStore = create<AudioState>((set, get) => ({
         const now = Date.now();
         const updatedAudio = { ...audio };
         
-        // First check if we need to transition from waiting states
-        if (updatedAudio.status === 'WAITING_FIRST' && now >= (updatedAudio.nextPlayTime || 0)) {
-          updatedAudio.status = 'SECOND_BURST';
-          updatedAudio.nextPlayTime = null;
-          console.log('Transitioning to second burst:', { id: audio.id });
-          return updatedAudio;
-        }
+        // Expanded logging for better tracking
+        console.log('Updating audio status:', {
+          id: audioId,
+          currentStatus: updatedAudio.status,
+          currentPlayCount: updatedAudio.playCount,
+          currentTime: now
+        });
 
-        if (updatedAudio.status === 'WAITING_SECOND' && now >= (updatedAudio.nextPlayTime || 0)) {
-          updatedAudio.status = 'FINAL_PLAY';
-          updatedAudio.nextPlayTime = null;
-          console.log('Transitioning to final play:', { id: audio.id });
-          return updatedAudio;
-        }
-
-        // Then handle play count updates based on current status
+        // More robust state transition logic
         switch (updatedAudio.status) {
           case 'FIRST_BURST':
-            // First play (0 -> 1)
-            if (updatedAudio.playCount === 0) {
-              updatedAudio.playCount = 1;
-              console.log('First burst first play:', { id: audio.id, newCount: updatedAudio.playCount });
-            } 
-            // Second play (1 -> 2) and transition to waiting
-            else if (updatedAudio.playCount === 1) {
-              updatedAudio.playCount = 2;
+            // Increment play count first
+            updatedAudio.playCount += 1;
+            
+            // If we've played twice, move to waiting state
+            if (updatedAudio.playCount >= 2) {
               updatedAudio.status = 'WAITING_FIRST';
               updatedAudio.nextPlayTime = now + WAIT_DURATION;
-              console.log('First burst second play and wait:', { id: audio.id, nextPlay: updatedAudio.nextPlayTime });
+              console.log('Moved to WAITING_FIRST with nextPlayTime:', updatedAudio.nextPlayTime);
+            }
+            break;
+
+          case 'WAITING_FIRST':
+            // Only transition if the waiting time has passed
+            if (now >= (updatedAudio.nextPlayTime || 0)) {
+              updatedAudio.status = 'SECOND_BURST';
+              updatedAudio.playCount = 2; // Reset to 2 to track second burst plays
+              updatedAudio.nextPlayTime = null;
+              console.log('Moved from WAITING_FIRST to SECOND_BURST');
             }
             break;
 
           case 'SECOND_BURST':
-            // First play of second burst (2 -> 3)
-            if (updatedAudio.playCount === 2) {
-              updatedAudio.playCount = 3;
-              console.log('Second burst first play:', { id: audio.id, newCount: updatedAudio.playCount });
-            }
-            // Second play of second burst (3 -> 4) and transition to waiting
-            else if (updatedAudio.playCount === 3) {
-              updatedAudio.playCount = 4;
+            // Increment play count (starting from 2)
+            updatedAudio.playCount += 1;
+            
+            // After playing twice in second burst (reaching count 4), move to next waiting state
+            if (updatedAudio.playCount >= 4) {
               updatedAudio.status = 'WAITING_SECOND';
               updatedAudio.nextPlayTime = now + WAIT_DURATION;
-              console.log('Second burst second play and wait:', { id: audio.id, nextPlay: updatedAudio.nextPlayTime });
+              console.log('Moved to WAITING_SECOND with nextPlayTime:', updatedAudio.nextPlayTime);
+            }
+            break;
+
+          case 'WAITING_SECOND':
+            // Only transition if the waiting time has passed
+            if (now >= (updatedAudio.nextPlayTime || 0)) {
+              updatedAudio.status = 'FINAL_PLAY';
+              updatedAudio.playCount = 4; // Reset to 4 to track final play
+              updatedAudio.nextPlayTime = null;
+              console.log('Moved from WAITING_SECOND to FINAL_PLAY');
             }
             break;
 
           case 'FINAL_PLAY':
-            // Final play (4 -> 5) and complete
-            updatedAudio.playCount = 5;
+            // After one play in final state, mark as completed
+            updatedAudio.playCount += 1;
             updatedAudio.status = 'COMPLETED';
-            updatedAudio.nextPlayTime = null;
-            console.log('Final play and complete:', { id: audio.id });
-            break;
-
-          default:
+            console.log('Completed audio playback');
             break;
         }
+
+        console.log('Updated audio status:', {
+          id: audioId,
+          newStatus: updatedAudio.status,
+          newPlayCount: updatedAudio.playCount,
+          nextPlayTime: updatedAudio.nextPlayTime
+        });
 
         return updatedAudio;
       });
 
-      return {
-        audioList: updatedList,
-      };
+      return { audioList: updatedList };
     });
 
-    // Clear currently playing if the audio is completed
+    // Check if the audio's status was updated to COMPLETED
     const updatedAudio = get().audioList.find(a => a.id === audioId);
     if (updatedAudio?.status === 'COMPLETED') {
+      setCurrentlyPlaying(null);
+      set({ isPlaying: false });
+    } else if (updatedAudio?.status === 'WAITING_FIRST' || updatedAudio?.status === 'WAITING_SECOND') {
+      // If we're in a waiting state, clear the currently playing
       setCurrentlyPlaying(null);
       set({ isPlaying: false });
     }
@@ -163,7 +175,7 @@ export const useAudioStore = create<AudioState>((set, get) => ({
 
     // Then check for any audio in FIRST_BURST
     const firstBurstAudio = audioList.find(audio => 
-      audio.status === 'FIRST_BURST' && audio.playCount === 0
+      audio.status === 'FIRST_BURST'
     );
     if (firstBurstAudio) {
       console.log('Found first burst audio:', { 
@@ -174,9 +186,9 @@ export const useAudioStore = create<AudioState>((set, get) => ({
       return firstBurstAudio;
     }
 
-    // Then check for any audio in SECOND_BURST
+    // Then check for any audio in SECOND_BURST with play count less than 4
     const secondBurstAudio = audioList.find(audio => 
-      audio.status === 'SECOND_BURST' && audio.playCount === 2
+      audio.status === 'SECOND_BURST' && audio.playCount < 4
     );
     if (secondBurstAudio) {
       console.log('Found second burst audio:', { 
@@ -187,9 +199,9 @@ export const useAudioStore = create<AudioState>((set, get) => ({
       return secondBurstAudio;
     }
 
-    // Finally, check for any audio ready for its final play
+    // Finally, check for any audio ready for its final play with play count of 4
     const finalAudio = audioList.find(audio => 
-      audio.status === 'FINAL_PLAY'
+      audio.status === 'FINAL_PLAY' && audio.playCount === 4
     );
     if (finalAudio) {
       console.log('Found final play audio:', { 

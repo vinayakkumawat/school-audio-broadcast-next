@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import { useAudioStore } from '../store/useAudioStore';
 import { AlertCircle, Clock, Play, Trash2 } from 'lucide-react';
 import { Audio } from '../types';
@@ -51,7 +51,14 @@ export const AudioPlayer: React.FC = () => {
     userInteracted
   } = useAudioStore();
 
-  const playAudio = async (audio: Audio) => {
+  const playAudio = useCallback(async (audio: Audio) => {
+    console.log('Attempting to play audio', {
+      id: audio.id,
+      status: audio.status,
+      playCount: audio.playCount,
+      userInteracted
+    });
+
     if (!audioRef.current || loadingRef.current || !userInteracted) {
       console.log('Cannot play: audio element not ready or loading or no user interaction', { 
         hasAudioRef: !!audioRef.current, 
@@ -124,10 +131,15 @@ export const AudioPlayer: React.FC = () => {
     } finally {
       loadingRef.current = false;
     }
-  };
+  }, [userInteracted, setCurrentlyPlaying, setError, setIsPlaying, removeAudio]);
 
-  const handleEnded = () => {
-    console.log('Audio playback ended');
+  const handleEnded = useCallback(() => {
+    console.log('Audio ended details', {
+      currentlyPlaying,
+      audioList,
+      userInteracted
+    });
+
     if (currentlyPlaying) {
       const prevPlayCount = currentlyPlaying.playCount;
       const prevStatus = currentlyPlaying.status;
@@ -162,7 +174,7 @@ export const AudioPlayer: React.FC = () => {
         }
       }
     }
-  };
+  }, [currentlyPlaying, audioList, updateAudioStatus, setCurrentlyPlaying, setIsPlaying, getNextAudioToPlay, playAudio]);
 
   const handleError = () => {
     const audioElement = audioRef.current;
@@ -190,7 +202,11 @@ export const AudioPlayer: React.FC = () => {
       if (!currentlyPlaying && userInteracted) {
         const nextAudio = getNextAudioToPlay();
         if (nextAudio) {
-          console.log('Found next audio to play:', { id: nextAudio.id, status: nextAudio.status });
+          console.log('Found next audio to play:', { 
+            id: nextAudio.id, 
+            status: nextAudio.status,
+            playCount: nextAudio.playCount
+          });
           playAudio(nextAudio);
         }
       }
