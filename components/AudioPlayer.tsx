@@ -1,147 +1,104 @@
 'use client'
 
-import React, { useEffect, useRef, useCallback, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useAudioStore } from '../store/useAudioStore';
-import { AlertCircle, Clock } from 'lucide-react';
-import { findNextAudioToPlay } from '../utils/queueHelpers';
-import { getQueueName } from '../utils/queueHelpers';
+import { AlertCircle, Clock, Play, Trash2 } from 'lucide-react';
 import { Audio } from '../types';
 
-const DELAY_BETWEEN_PLAYS = 30; // 30 seconds
+const formatTimeLeft = (status: string, nextPlayTime: number | null): string => {
+  if (!nextPlayTime) return '';
+  if (status !== 'WAITING_FIRST' && status !== 'WAITING_SECOND') return '';
+  
+  const timeLeft = Math.max(0, Math.ceil((nextPlayTime - Date.now()) / 1000));
+  return `${timeLeft}s`;
+};
 
-interface DelayInfo {
-  timeLeft: number;
-  timerId: NodeJS.Timeout;
-  queueNumber: number;
-  playCount: number;
-}
-
-interface AudioDelays {
-  [audioId: string]: DelayInfo;
-}
+const getStatusDisplay = (status: string): string => {
+  switch (status) {
+    case 'FIRST_BURST':
+      return 'First Play';
+    case 'WAITING_FIRST':
+      return 'Waiting (1st)';
+    case 'SECOND_BURST':
+      return 'Second Play';
+    case 'WAITING_SECOND':
+      return 'Waiting (2nd)';
+    case 'FINAL_PLAY':
+      return 'Final Play';
+    case 'COMPLETED':
+      return 'Completed';
+    default:
+      return status;
+  }
+};
 
 export const AudioPlayer: React.FC = () => {
   const audioRef = useRef<HTMLAudioElement>(null);
-  const playCountRef = useRef<{ [key: string]: number }>({});
-  const delaysRef = useRef<AudioDelays>({});
-  const [delays, setDelays] = useState<AudioDelays>({});
   const loadingRef = useRef<boolean>(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const {
-    firstQueue,
-    secondQueue,
-    thirdQueue,
-    moveToNextQueue,
+    audioList,
     currentlyPlaying,
     setCurrentlyPlaying,
     error,
     setError,
     setIsPlaying,
-    cleanExpiredAudios,
+    updateAudioStatus,
+    getNextAudioToPlay,
+    removeAudio,
     setUserInteracted,
     userInteracted
   } = useAudioStore();
 
-  const isAudioInQueues = useCallback((audioId: string) => {
-    return [...firstQueue, ...secondQueue, ...thirdQueue].some(audio => audio.id === audioId);
-  }, [firstQueue, secondQueue, thirdQueue]);
-
-  const clearDelayForAudio = useCallback((audioId: string) => {
-    if (delaysRef.current[audioId]) {
-      clearInterval(delaysRef.current[audioId].timerId);
-      delete delaysRef.current[audioId];
-      setDelays(prev => {
-        const newDelays = { ...prev };
-        delete newDelays[audioId];
-        return newDelays;
+  const playAudio = async (audio: Audio) => {
+    if (!audioRef.current || loadingRef.current || !userInteracted) {
+      console.log('Cannot play: audio element not ready or loading or no user interaction', { 
+        hasAudioRef: !!audioRef.current, 
+        isLoading: loadingRef.current,
+        hasUserInteracted: userInteracted
       });
+      return;
     }
-  }, []);
-
-  const startDelayForAudio = useCallback((audio: Audio, onComplete: () => void) => {
-    clearDelayForAudio(audio.id);
-
-    const startDelay = DELAY_BETWEEN_PLAYS;
-    const playCount = playCountRef.current[audio.id] || 0;
-
-    const timer = setInterval(() => {
-      // First check if the delay exists
-      const currentDelay = delaysRef.current[audio.id];
-
-      if (!currentDelay) {
-        clearInterval(timer);
-        return;
-      }
-
-      // Safely update the timeLeft
-      delaysRef.current[audio.id].timeLeft -= 1;
-
-      // Only update state if the delay still exists
-      setDelays(prev => ({
-        ...prev,
-        [audio.id]: {
-          ...currentDelay,
-          timeLeft: currentDelay.timeLeft
-        }
-      }));
-
-      // When delay is complete, clear it and check if we can play
-      if (currentDelay.timeLeft <= 0) {
-        clearDelayForAudio(audio.id);
-        if (isAudioInQueues(audio.id)) {
-          // Check if no other audio is currently playing
-          if (!currentlyPlaying) {
-            onComplete();
-          }
-        }
-      }
-    }, 1000);
-
-    const delayInfo: DelayInfo = {
-      timeLeft: startDelay,
-      timerId: timer,
-      queueNumber: audio.queue,
-      playCount
-    };
-
-    delaysRef.current[audio.id] = delayInfo;
-    setDelays(prev => ({ ...prev, [audio.id]: delayInfo }));
-  }, [clearDelayForAudio, isAudioInQueues, currentlyPlaying]);
-
-  const playAudio = useCallback(async (audio: Audio) => {
-    if (!audioRef.current || !isAudioInQueues(audio.id) || loadingRef.current) return;
 
     try {
       loadingRef.current = true;
+      console.log('Starting to play audio:', { id: audio.id, status: audio.status });
 
-      if (!audio.url.startsWith('data:audio')) {
-        setError('Invalid audio format');
-        moveToNextQueue(audio);
-        loadingRef.current = false;
+      if (!audio.url) {
+        console.error('Audio URL is missing');
+        setError('Audio URL is missing');
+        removeAudio(audio.id);
         return;
       }
-
-      // Clear any existing delays for this audio
-      clearDelayForAudio(audio.id);
 
       // Reset the audio element
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
 
-      // Set new source
+      console.log('Setting audio source:', audio.url.substring(0, 50) + '...');
       audioRef.current.src = audio.url;
+
+      // Set volume
+      audioRef.current.volume = 1;
 
       // Wait for the audio to be loaded
       await new Promise((resolve, reject) => {
         if (!audioRef.current) return reject(new Error('No audio element'));
 
         const onCanPlay = () => {
+          console.log('Audio can play now');
           audioRef.current?.removeEventListener('canplay', onCanPlay);
           resolve(null);
         };
 
         const onError = (e: Event) => {
-          console.error('Audio loading error:', e);
+          const audioElement = e.target as HTMLAudioElement;
+          console.error('Audio loading error:', {
+            error: audioElement.error,
+            networkState: audioElement.networkState,
+            readyState: audioElement.readyState
+          });
           audioRef.current?.removeEventListener('error', onError);
           reject(new Error('Audio loading failed'));
         };
@@ -150,139 +107,100 @@ export const AudioPlayer: React.FC = () => {
         audioRef.current.addEventListener('error', onError);
       });
 
-      // Now play the audio
-      await audioRef.current.play();
+      console.log('Attempting to play audio');
+      const playPromise = audioRef.current.play();
+      await playPromise;
+      
+      console.log('Audio started playing successfully');
       setCurrentlyPlaying(audio);
       setIsPlaying(true);
       setError(null);
+
     } catch (error) {
       console.error('Audio playback error:', error);
       setError('Failed to play audio file');
       setIsPlaying(false);
-      moveToNextQueue(audio);
+      removeAudio(audio.id);
     } finally {
       loadingRef.current = false;
     }
-  }, [isAudioInQueues, moveToNextQueue, setCurrentlyPlaying, setError, setIsPlaying, clearDelayForAudio]);
+  };
 
-  const handleEnded = useCallback(() => {
+  const handleEnded = () => {
+    console.log('Audio playback ended');
     if (currentlyPlaying) {
-      if (!isAudioInQueues(currentlyPlaying.id)) {
-        setCurrentlyPlaying(null);
-        setIsPlaying(false);
-        return;
-      }
-
-      const currentCount = playCountRef.current[currentlyPlaying.id] || 0;
-
-      if (currentCount < 1) {
-        playCountRef.current[currentlyPlaying.id] = currentCount + 1;
-
-        if (currentlyPlaying.queue > 1) {
-          setCurrentlyPlaying(null);
-          setIsPlaying(false);
-          startDelayForAudio(currentlyPlaying, () => {
-            // Check for higher priority audios before playing
-            const higherPriorityAudio = findNextAudioToPlay(firstQueue, [], []);
-            if (higherPriorityAudio) {
-              playAudio(higherPriorityAudio);
-            } else {
-              playAudio(currentlyPlaying);
-            }
-          });
-        } else {
-          // Queue 1 plays immediately again
-          if (audioRef.current) {
-            audioRef.current.currentTime = 0;
-            audioRef.current.play()
-              .catch((error) => {
-                console.error('Audio replay error:', error);
-                setError('Failed to replay audio file');
-                moveToNextQueue(currentlyPlaying);
-                setCurrentlyPlaying(null);
-                setIsPlaying(false);
-              });
-          }
-        }
-      } else {
-        delete playCountRef.current[currentlyPlaying.id];
-        moveToNextQueue(currentlyPlaying);
-        setCurrentlyPlaying(null);
-        setIsPlaying(false);
-      }
+      const prevPlayCount = currentlyPlaying.playCount;
+      // Update the status first
+      updateAudioStatus(currentlyPlaying.id);
+      setCurrentlyPlaying(null);
+      setIsPlaying(false);
+      
+      // Log the transition
+      console.log('Audio transition:', {
+        id: currentlyPlaying.id,
+        prevPlayCount,
+        status: currentlyPlaying.status
+      });
     }
-  }, [currentlyPlaying, moveToNextQueue, setCurrentlyPlaying, setIsPlaying, setError, isAudioInQueues, startDelayForAudio, playAudio]);
+  };
 
-  const handleError = useCallback(() => {
+  const handleError = () => {
+    const audioElement = audioRef.current;
+    console.error('Audio error occurred:', {
+      error: audioElement?.error,
+      networkState: audioElement?.networkState,
+      readyState: audioElement?.readyState
+    });
+    
     setError('Failed to play audio file');
     if (currentlyPlaying) {
-      moveToNextQueue(currentlyPlaying);
+      removeAudio(currentlyPlaying.id);
       setCurrentlyPlaying(null);
       setIsPlaying(false);
     }
-  }, [currentlyPlaying, moveToNextQueue, setCurrentlyPlaying, setError, setIsPlaying]);
+  };
 
+  // Check for next audio to play periodically
   useEffect(() => {
-    // Clean expired audios every minute
-    const cleanupInterval = setInterval(() => {
-      cleanExpiredAudios();
-    }, 60000);
-
-    return () => clearInterval(cleanupInterval);
-  }, [cleanExpiredAudios]);
-
-  useEffect(() => {
-    // If no audio is playing, start delays for all queue 2 and 3 audios
-    const queue2and3 = [...secondQueue, ...thirdQueue];
-
-    // Start delays for all audios that don't have delays yet
-    queue2and3.forEach(audio => {
-      if (!delays[audio.id]) {
-        startDelayForAudio(audio, () => {
-          // Only play if no other audio is currently playing
-          if (!currentlyPlaying) {
-            // Check for any queue 1 audio first
-            const higherPriorityAudio = findNextAudioToPlay(firstQueue, [], []);
-            if (higherPriorityAudio) {
-              playAudio(higherPriorityAudio);
-            } else {
-              playAudio(audio);
-            }
-          }
-        });
-      }
-    });
-
-    // Handle queue 1 immediately if nothing is playing
-    if (!currentlyPlaying) {
-      const nextQueue1Audio = findNextAudioToPlay(firstQueue, [], []);
-      if (nextQueue1Audio) {
-        playAudio(nextQueue1Audio);
-      }
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
     }
-  }, [firstQueue, secondQueue, thirdQueue, currentlyPlaying, delays, startDelayForAudio, playAudio]);
 
-  // Clean up when component unmounts
-  useEffect(() => {
+    timerRef.current = setInterval(() => {
+      if (!currentlyPlaying && userInteracted) {
+        const nextAudio = getNextAudioToPlay();
+        if (nextAudio) {
+          console.log('Found next audio to play:', { id: nextAudio.id, status: nextAudio.status });
+          playAudio(nextAudio);
+        }
+      }
+    }, 1000);
+
     return () => {
-      Object.keys(delaysRef.current).forEach(clearDelayForAudio);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
     };
-  }, [clearDelayForAudio]);
+  }, [userInteracted, currentlyPlaying, getNextAudioToPlay, playAudio]);
 
-  // Clean up if audio is removed
+  // Remove completed audios
   useEffect(() => {
-    Object.keys(delays).forEach(audioId => {
-      if (!isAudioInQueues(audioId)) {
-        clearDelayForAudio(audioId);
+    audioList.forEach(audio => {
+      if (audio.status === 'COMPLETED') {
+        console.log('Removing completed audio:', audio.id);
+        removeAudio(audio.id);
       }
     });
-  }, [firstQueue, secondQueue, thirdQueue, clearDelayForAudio, isAudioInQueues]);
+  }, [audioList, removeAudio]);
 
   if (!userInteracted) {
     return (
-      <div className='fixed flex items-center justify-center bottom-0 w-full bg-white border-t border-gray-200 p-4'>
+      <div className='flex items-center justify-center w-full bg-white border-t border-gray-200 p-4'>
         <button
-          onClick={() => setUserInteracted()}
+          onClick={() => {
+            console.log('User interaction received');
+            setUserInteracted();
+          }}
           className="p-2 text-sm text-gray-800 border border-gray-300 rounded-full"
         >
           Click here to Enable Audio
@@ -292,7 +210,7 @@ export const AudioPlayer: React.FC = () => {
   }
 
   return (
-    <div className="fixed bottom-0 w-full bg-white border-t border-gray-200">
+    <div className="w-full bg-white border-t border-gray-200">
       {error && (
         <div className="bg-red-50 p-4">
           <div className="flex items-center">
@@ -306,27 +224,56 @@ export const AudioPlayer: React.FC = () => {
           ref={audioRef}
           onEnded={handleEnded}
           onError={handleError}
-          controls
-          className="w-full"
+          style={{ display: 'none' }}
         />
         <div className="mt-2 space-y-2">
           {currentlyPlaying && (
             <div className="text-sm text-gray-500">
-              Now playing: Audio {currentlyPlaying.id} ({getQueueName(currentlyPlaying.queue)})
+              Now playing: Audio {currentlyPlaying.id} ({getStatusDisplay(currentlyPlaying.status)})
               <span className="ml-2">
-                (Play {(playCountRef.current[currentlyPlaying.id] || 0) + 1}/2)
+                (Play {currentlyPlaying.playCount}/5)
               </span>
             </div>
           )}
-          {Object.keys(delays).length > 0 && <div className='max-h-20 overflow-scroll'>
-            {Object.entries(delays).map(([audioId, delay]) => (
-              <div key={audioId} className="flex items-center text-sm text-yellow-600">
-                <Clock className="w-4 h-4 mr-1" />
-                Audio {audioId} ({getQueueName(delay.queueNumber)}) waiting: {delay.timeLeft}s
-              </div>
-            ))}
-          </div>}
+          <div className='max-h-20 overflow-scroll'>
+            {audioList
+              .filter(audio => audio.status === 'WAITING_FIRST' || audio.status === 'WAITING_SECOND')
+              .map((audio) => (
+                <div key={audio.id} className="flex items-center text-sm text-yellow-600">
+                  <Clock className="w-4 h-4 mr-1" />
+                  Audio {audio.id} ({getStatusDisplay(audio.status)}) waiting: {formatTimeLeft(audio.status, audio.nextPlayTime)}
+                </div>
+              ))}
+          </div>
 
+          <div className="space-y-2">
+            {audioList
+              .filter(audio => audio.status !== 'COMPLETED')
+              .map((audio) => (
+                <div
+                  key={audio.id}
+                  className="flex items-center justify-between bg-white p-4 rounded-lg shadow"
+                >
+                  <div className="flex items-center space-x-4">
+                    <Play className={`w-5 h-5 ${currentlyPlaying?.id === audio.id ? 'text-blue-600' : 'text-gray-600'}`} />
+                    <div>
+                      <p className="font-medium">Audio {audio.id}</p>
+                      <div className="flex items-center text-sm text-gray-500">
+                        <span>
+                          {getStatusDisplay(audio.status)} ({audio.playCount}/5 plays)
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => removeAudio(audio.id)}
+                    className="p-2 hover:bg-red-50 rounded-full"
+                  >
+                    <Trash2 className="w-5 h-5 text-red-500" />
+                  </button>
+                </div>
+              ))}
+          </div>
         </div>
       </div>
     </div>

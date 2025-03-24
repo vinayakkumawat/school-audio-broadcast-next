@@ -4,13 +4,22 @@ export interface User {
   createdAt: string;
 }
 
+export type AudioStatus = 
+  | 'FIRST_BURST'
+  | 'WAITING_FIRST'
+  | 'SECOND_BURST'
+  | 'WAITING_SECOND'
+  | 'FINAL_PLAY'
+  | 'COMPLETED';
+
 export interface Audio {
   id: string;
   userId: string;
   url: string;
   createdAt: string;
-  queue: 1 | 2 | 3;
-  played: boolean;
+  playCount: number;
+  nextPlayTime: number | null;
+  status: AudioStatus;
 }
 
 export interface Admin {

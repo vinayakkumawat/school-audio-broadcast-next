@@ -1,97 +1,180 @@
 import { create } from 'zustand';
 import { Audio } from '../types';
-import { isAudioExpired, getNextQueueNumber, shouldRemoveAudio } from '../utils/audioQueue';
+
+const WAIT_DURATION = 3000; // 30 seconds in milliseconds
 
 interface AudioState {
-  firstQueue: Audio[];
-  secondQueue: Audio[];
-  thirdQueue: Audio[];
+  audioList: Audio[];
   currentlyPlaying: Audio | null;
   error: string | null;
   isPlaying: boolean;
-  addAudio: (audio: Audio) => void;
+  userInteracted: boolean;
+  addAudio: (audio: Omit<Audio, 'playCount' | 'nextPlayTime' | 'status'>) => void;
   removeAudio: (audioId: string) => void;
-  moveToNextQueue: (audio: Audio) => void;
+  updateAudioStatus: (audioId: string) => void;
   setCurrentlyPlaying: (audio: Audio | null) => void;
   setError: (error: string | null) => void;
   setIsPlaying: (isPlaying: boolean) => void;
-  cleanExpiredAudios: () => void;
-  userInteracted: boolean;
   setUserInteracted: () => void;
+  getNextAudioToPlay: () => Audio | null;
 }
 
 export const useAudioStore = create<AudioState>((set, get) => ({
-  firstQueue: [],
-  secondQueue: [],
-  thirdQueue: [],
+  audioList: [],
   currentlyPlaying: null,
   error: null,
   isPlaying: false,
   userInteracted: false,
-  setUserInteracted: () => set({ userInteracted: true }),
 
-  addAudio: (audio) => {
-    const { firstQueue, secondQueue, thirdQueue } = get();
-    const exists = [...firstQueue, ...secondQueue, ...thirdQueue]
-      .some(a => a.id === audio.id);
+  addAudio: (audioData) => {
+    const newAudio: Audio = {
+      ...audioData,
+      playCount: 0,
+      nextPlayTime: null,
+      status: 'FIRST_BURST'
+    };
 
-    if (!exists && !isAudioExpired(audio)) {
-      set((state) => ({
-        firstQueue: [...state.firstQueue, { ...audio, queue: 1 }],
-        error: null,
-      }));
-    }
+    set((state) => ({
+      audioList: [...state.audioList, newAudio],
+      error: null,
+    }));
   },
 
   removeAudio: (audioId) => {
-    const { currentlyPlaying, setCurrentlyPlaying, setError } = get();
+    const { currentlyPlaying, setCurrentlyPlaying } = get();
     
-    try {
-      if (currentlyPlaying?.id === audioId) {
-        setCurrentlyPlaying(null);
-      }
+    if (currentlyPlaying?.id === audioId) {
+      setCurrentlyPlaying(null);
+      set({ isPlaying: false });
+    }
 
-      set((state) => ({
-        firstQueue: state.firstQueue.filter((a) => a.id !== audioId),
-        secondQueue: state.secondQueue.filter((a) => a.id !== audioId),
-        thirdQueue: state.thirdQueue.filter((a) => a.id !== audioId),
-        error: null,
-      }));
-    } catch (error) {
-      setError('Failed to remove audio');
+    set((state) => ({
+      audioList: state.audioList.filter((a) => a.id !== audioId),
+      error: null,
+    }));
+  },
+
+  updateAudioStatus: (audioId) => {
+    const { setCurrentlyPlaying } = get();
+    
+    set((state) => {
+      const updatedList = state.audioList.map((audio) => {
+        if (audio.id !== audioId) return audio;
+
+        const now = Date.now();
+        const updatedAudio = { ...audio };
+        
+        // First check if we need to transition from waiting states
+        if (updatedAudio.status === 'WAITING_FIRST' && now >= (updatedAudio.nextPlayTime || 0)) {
+          updatedAudio.status = 'SECOND_BURST';
+          updatedAudio.nextPlayTime = null;
+          console.log('Transitioning to second burst:', { id: audio.id });
+          return updatedAudio;
+        }
+
+        if (updatedAudio.status === 'WAITING_SECOND' && now >= (updatedAudio.nextPlayTime || 0)) {
+          updatedAudio.status = 'FINAL_PLAY';
+          updatedAudio.nextPlayTime = null;
+          console.log('Transitioning to final play:', { id: audio.id });
+          return updatedAudio;
+        }
+
+        // Then handle play count updates based on current status
+        switch (updatedAudio.status) {
+          case 'FIRST_BURST':
+            // First play (0 -> 1)
+            if (updatedAudio.playCount === 0) {
+              updatedAudio.playCount = 1;
+              audio.playCount = 1;
+              console.log('First burst first play:', { id: audio.id, newCount: updatedAudio.playCount });
+            } 
+            // Second play (1 -> 2) and transition to waiting
+            else if (updatedAudio.playCount === 1) {
+              updatedAudio.playCount = 2;
+              audio.playCount = 2;
+              updatedAudio.status = 'WAITING_FIRST';
+              updatedAudio.nextPlayTime = now + WAIT_DURATION;
+              console.log('First burst second play and wait:', { id: audio.id, nextPlay: updatedAudio.nextPlayTime });
+            }
+            break;
+
+          case 'SECOND_BURST':
+            // First play of second burst (2 -> 3)
+            if (updatedAudio.playCount === 2) {
+              updatedAudio.playCount = 3;
+              audio.playCount = 3;
+              console.log('Second burst first play:', { id: audio.id, newCount: updatedAudio.playCount });
+            }
+            // Second play of second burst (3 -> 4) and transition to waiting
+            else if (updatedAudio.playCount === 3) {
+              updatedAudio.playCount = 4;
+              audio.playCount = 4;
+              updatedAudio.status = 'WAITING_SECOND';
+              updatedAudio.nextPlayTime = now + WAIT_DURATION;
+              console.log('Second burst second play and wait:', { id: audio.id, nextPlay: updatedAudio.nextPlayTime });
+            }
+            break;
+
+          case 'FINAL_PLAY':
+            // Final play (4 -> 5) and complete
+            updatedAudio.playCount = 5;
+            audio.playCount = 5;
+            updatedAudio.status = 'COMPLETED';
+            updatedAudio.nextPlayTime = null;
+            console.log('Final play and complete:', { id: audio.id });
+            break;
+
+          default:
+            break;
+        }
+
+        return updatedAudio;
+      });
+
+      return {
+        audioList: updatedList,
+      };
+    });
+
+    // Clear currently playing if the audio is completed
+    const updatedAudio = get().audioList.find(a => a.id === audioId);
+    if (updatedAudio?.status === 'COMPLETED') {
+      setCurrentlyPlaying(null);
+      set({ isPlaying: false });
     }
   },
 
-  moveToNextQueue: (audio) => {
-    const { removeAudio, setError, userInteracted } = get();
-    
-    try {
-      if (!userInteracted) {
-        setError('Please click play to start audio playback');
-        return;
-      }
-      
-      const nextQueue = getNextQueueNumber(audio.queue);
-      if (!nextQueue) {
-        removeAudio(audio.id);
-        return;
-      }
+  getNextAudioToPlay: () => {
+    const { audioList, currentlyPlaying } = get();
+    const now = Date.now();
 
-      if (!isAudioExpired(audio)) {
-        removeAudio(audio.id);
-        set((state) => ({
-          [nextQueue === 2 ? 'secondQueue' : 'thirdQueue']: [
-            ...state[nextQueue === 2 ? 'secondQueue' : 'thirdQueue'],
-            { ...audio, queue: nextQueue },
-          ],
-          error: null,
-        }));
-      } else {
-        removeAudio(audio.id);
-      }
-    } catch (error) {
-      setError('Failed to move audio to next queue');
-    }
+    // If something is currently playing, don't play anything else
+    if (currentlyPlaying) return null;
+
+    // First, check for any audio in FIRST_BURST
+    const firstBurstAudio = audioList.find(audio => 
+      audio.status === 'FIRST_BURST' && audio.playCount < 2
+    );
+    if (firstBurstAudio) return firstBurstAudio;
+
+    // Check for any waiting audio that's ready
+    const waitingAudio = audioList.find(audio => 
+      (audio.status === 'WAITING_FIRST' || audio.status === 'WAITING_SECOND') &&
+      audio.nextPlayTime && now >= audio.nextPlayTime
+    );
+    if (waitingAudio) return waitingAudio;
+
+    // Then check for any audio in SECOND_BURST
+    const secondBurstAudio = audioList.find(audio => 
+      audio.status === 'SECOND_BURST' && audio.playCount < 4
+    );
+    if (secondBurstAudio) return secondBurstAudio;
+
+    // Finally, check for any audio ready for its final play
+    const finalAudio = audioList.find(audio => 
+      audio.status === 'FINAL_PLAY'
+    );
+    return finalAudio || null;
   },
 
   setCurrentlyPlaying: (audio) => {
@@ -106,12 +189,7 @@ export const useAudioStore = create<AudioState>((set, get) => ({
     set({ isPlaying });
   },
 
-  cleanExpiredAudios: () => {
-    set((state) => ({
-      firstQueue: state.firstQueue.filter((a) => !isAudioExpired(a)),
-      secondQueue: state.secondQueue.filter((a) => !isAudioExpired(a)),
-      thirdQueue: state.thirdQueue.filter((a) => !shouldRemoveAudio(a)),
-      error: null,
-    }));
+  setUserInteracted: () => {
+    set({ userInteracted: true });
   },
 }));

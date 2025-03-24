@@ -6,7 +6,6 @@ import { usePathname } from 'next/navigation';
 import { useAuthStore } from '../store/useAuthStore';
 import { WebSocketStatus } from './WebSocketStatus';
 import { AdminProfile } from './AdminProfile';
-import { AudioPlayer } from './AudioPlayer';
 import { Settings, LayoutDashboard, Users, TestTube } from 'lucide-react';
 
 export const Layout: React.FC<PropsWithChildren> = ({ children }) => {
@@ -86,8 +85,6 @@ export const Layout: React.FC<PropsWithChildren> = ({ children }) => {
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         {children} {/* This will render the child components or pages */}
       </main>
-
-      <AudioPlayer />
 
       {showAdminProfile && (
         <AdminProfile onClose={() => setShowAdminProfile(false)} />
