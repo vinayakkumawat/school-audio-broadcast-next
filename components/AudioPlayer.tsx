@@ -7,13 +7,23 @@ import { Audio } from '../types';
 
 const formatTimeLeft = (status: string, nextPlayTime: number | null): string => {
   if (!nextPlayTime) return '';
-  if (status !== 'WAITING_FIRST' && status !== 'WAITING_SECOND') return '';
+  if (status !== 'WAITING_FIRST' && status !== 'WAITING_SECOND' && status !== 'READY_TO_PLAY') return '';
   
   const timeLeft = Math.max(0, Math.ceil((nextPlayTime - Date.now()) / 1000));
   return `${timeLeft}s`;
 };
 
-const getStatusDisplay = (status: string): string => {
+const getStatusDisplay = (status: string, playIndex?: number): string => {
+  // For new playback logic, use playIndex to show position
+  if (status === 'READY_TO_PLAY' && playIndex) {
+    if (playIndex <= 2) {
+      return 'Immediate Play';
+    } else {
+      return `Scheduled Play #${playIndex}`;
+    }
+  }
+
+  // Legacy status display
   switch (status) {
     case 'FIRST_BURST':
       return 'First Play';
@@ -221,11 +231,21 @@ export const AudioPlayer: React.FC = () => {
 
   // Remove completed audios
   useEffect(() => {
+    const completedBaseIds = new Set<string>();
+    
     audioList.forEach(audio => {
       if (audio.status === 'COMPLETED') {
-        console.log('Removing completed audio:', audio.id);
-        removeAudio(audio.id);
+        // Get the base ID without the position suffix
+        const baseId = audio.id.split('-')[0];
+        console.log('Completed audio:', audio.id, 'Base ID:', baseId);
+        completedBaseIds.add(baseId);
       }
+    });
+    
+    // Only remove once for each base ID
+    completedBaseIds.forEach(baseId => {
+      console.log('Removing completed audio group:', baseId);
+      removeAudio(baseId);
     });
   }, [audioList, removeAudio]);
 
@@ -265,19 +285,23 @@ export const AudioPlayer: React.FC = () => {
         <div className="mt-2 space-y-2">
           {currentlyPlaying && (
             <div className="text-sm text-gray-500">
-              Now playing: Audio {currentlyPlaying.id} ({getStatusDisplay(currentlyPlaying.status)})
-              <span className="ml-2">
-                (Play {currentlyPlaying.playCount}/5)
-              </span>
+              Now playing: Audio {currentlyPlaying.id.split('-')[0]} 
+              {currentlyPlaying.playIndex 
+                ? `(${getStatusDisplay(currentlyPlaying.status, currentlyPlaying.playIndex)}, ${currentlyPlaying.playIndex}/6)` 
+                : `(${getStatusDisplay(currentlyPlaying.status)}, ${currentlyPlaying.playCount}/5 plays)`
+              }
             </div>
           )}
           <div className='max-h-20 overflow-scroll'>
             {audioList
-              .filter(audio => audio.status === 'WAITING_FIRST' || audio.status === 'WAITING_SECOND')
+              .filter(audio => 
+                (audio.status === 'WAITING_FIRST' || audio.status === 'WAITING_SECOND') || 
+                (audio.status === 'READY_TO_PLAY' && audio.nextPlayTime)
+              )
               .map((audio) => (
                 <div key={audio.id} className="flex items-center text-sm text-yellow-600">
                   <Clock className="w-4 h-4 mr-1" />
-                  Audio {audio.id} ({getStatusDisplay(audio.status)}) waiting: {formatTimeLeft(audio.status, audio.nextPlayTime)}
+                  Audio {audio.id.split('-')[0]} ({getStatusDisplay(audio.status, audio.playIndex)}) waiting: {formatTimeLeft(audio.status, audio.nextPlayTime)}
                 </div>
               ))}
           </div>
@@ -293,16 +317,16 @@ export const AudioPlayer: React.FC = () => {
                   <div className="flex items-center space-x-4">
                     <Play className={`w-5 h-5 ${currentlyPlaying?.id === audio.id ? 'text-blue-600' : 'text-gray-600'}`} />
                     <div>
-                      <p className="font-medium">Audio {audio.id}</p>
+                      <p className="font-medium">Audio {audio.id.split('-')[0]}</p>
                       <div className="flex items-center text-sm text-gray-500">
                         <span>
-                          {getStatusDisplay(audio.status)} ({audio.playCount}/5 plays)
+                          {getStatusDisplay(audio.status, audio.playIndex)} {audio.playIndex ? `(${audio.playIndex}/6)` : `(${audio.playCount}/5 plays)`}
                         </span>
                       </div>
                     </div>
                   </div>
                   <button
-                    onClick={() => removeAudio(audio.id)}
+                    onClick={() => removeAudio(audio.id.split('-')[0])}
                     className="p-2 hover:bg-red-50 rounded-full"
                   >
                     <Trash2 className="w-5 h-5 text-red-500" />

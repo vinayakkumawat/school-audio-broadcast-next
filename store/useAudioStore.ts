@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Audio } from '../types';
+import { Audio, AudioStatus } from '../types';
 
 const WAIT_DURATION = 30000; // 30 seconds in milliseconds
 
@@ -9,7 +9,7 @@ interface AudioState {
   error: string | null;
   isPlaying: boolean;
   userInteracted: boolean;
-  addAudio: (audio: Omit<Audio, 'playCount' | 'nextPlayTime' | 'status'>) => void;
+  addAudio: (audio: Omit<Audio, 'playCount' | 'nextPlayTime' | 'status' | 'playIndex'>) => void;
   removeAudio: (audioId: string) => void;
   updateAudioStatus: (audioId: string) => void;
   setCurrentlyPlaying: (audio: Audio | null) => void;
@@ -27,128 +27,77 @@ export const useAudioStore = create<AudioState>((set, get) => ({
   userInteracted: false,
 
   addAudio: (audioData) => {
-    const newAudio: Audio = {
-      ...audioData,
-      playCount: 0,
-      nextPlayTime: null,
-      status: 'FIRST_BURST'
-    };
+    const now = Date.now();
+    
+    // Create 6 playback entries for this audio
+    const newAudioEntries: Audio[] = Array.from({ length: 6 }).map((_, index) => {
+      const entry: Audio = {
+        ...audioData,
+        id: `${audioData.id}-${index + 1}`, // Create unique IDs for each entry
+        playCount: 0,
+        playIndex: index + 1, // Track the position (1-6)
+        status: 'READY_TO_PLAY' as AudioStatus,
+        nextPlayTime: index < 2 ? null : now + (WAIT_DURATION * (index - 1)) // First 2 play immediately, others scheduled
+      };
+      return entry;
+    });
+    
+    console.log('Added 6 new audio entries:', newAudioEntries.map(a => ({ 
+      id: a.id, 
+      playIndex: a.playIndex, 
+      nextPlayTime: a.nextPlayTime 
+    })));
 
     set((state) => ({
-      audioList: [...state.audioList, newAudio],
+      audioList: [...state.audioList, ...newAudioEntries],
       error: null,
     }));
   },
 
   removeAudio: (audioId) => {
     const { currentlyPlaying, setCurrentlyPlaying } = get();
+    const baseId = audioId.split('-')[0]; // Get the base ID without the entry index
     
-    if (currentlyPlaying?.id === audioId) {
+    // If currently playing audio is from this group, stop it
+    if (currentlyPlaying && currentlyPlaying.id.startsWith(baseId)) {
       setCurrentlyPlaying(null);
       set({ isPlaying: false });
     }
 
+    // Remove all entries associated with this audio
     set((state) => ({
-      audioList: state.audioList.filter((a) => a.id !== audioId),
+      audioList: state.audioList.filter((a) => !a.id.startsWith(baseId)),
       error: null,
     }));
   },
 
   updateAudioStatus: (audioId) => {
-    const { setCurrentlyPlaying } = get();
-    
     set((state) => {
       const updatedList = state.audioList.map((audio) => {
         if (audio.id !== audioId) return audio;
-
-        const now = Date.now();
-        const updatedAudio = { ...audio };
         
-        // Expanded logging for better tracking
-        console.log('Updating audio status:', {
-          id: audioId,
-          currentStatus: updatedAudio.status,
-          currentPlayCount: updatedAudio.playCount,
-          currentTime: now
+        // Mark this entry as played
+        const updatedAudio: Audio = { 
+          ...audio,
+          playCount: 1,
+          status: 'COMPLETED' as AudioStatus
+        };
+        
+        console.log('Audio entry completed:', { 
+          id: audioId, 
+          playIndex: audio.playIndex 
         });
-
-        // More robust state transition logic
-        switch (updatedAudio.status) {
-          case 'FIRST_BURST':
-            // Increment play count first
-            updatedAudio.playCount += 1;
-            
-            // If we've played twice, move to waiting state
-            if (updatedAudio.playCount >= 2) {
-              updatedAudio.status = 'WAITING_FIRST';
-              updatedAudio.nextPlayTime = now + WAIT_DURATION;
-              console.log('Moved to WAITING_FIRST with nextPlayTime:', updatedAudio.nextPlayTime);
-            }
-            break;
-
-          case 'WAITING_FIRST':
-            // Only transition if the waiting time has passed
-            if (now >= (updatedAudio.nextPlayTime || 0)) {
-              updatedAudio.status = 'SECOND_BURST';
-              updatedAudio.playCount = 2; // Reset to 2 to track second burst plays
-              updatedAudio.nextPlayTime = null;
-              console.log('Moved from WAITING_FIRST to SECOND_BURST');
-            }
-            break;
-
-          case 'SECOND_BURST':
-            // Increment play count (starting from 2)
-            updatedAudio.playCount += 1;
-            
-            // After playing twice in second burst (reaching count 4), move to next waiting state
-            if (updatedAudio.playCount >= 4) {
-              updatedAudio.status = 'WAITING_SECOND';
-              updatedAudio.nextPlayTime = now + WAIT_DURATION;
-              console.log('Moved to WAITING_SECOND with nextPlayTime:', updatedAudio.nextPlayTime);
-            }
-            break;
-
-          case 'WAITING_SECOND':
-            // Only transition if the waiting time has passed
-            if (now >= (updatedAudio.nextPlayTime || 0)) {
-              updatedAudio.status = 'FINAL_PLAY';
-              updatedAudio.playCount = 4; // Reset to 4 to track final play
-              updatedAudio.nextPlayTime = null;
-              console.log('Moved from WAITING_SECOND to FINAL_PLAY');
-            }
-            break;
-
-          case 'FINAL_PLAY':
-            // After one play in final state, mark as completed
-            updatedAudio.playCount += 1;
-            updatedAudio.status = 'COMPLETED';
-            console.log('Completed audio playback');
-            break;
-        }
-
-        console.log('Updated audio status:', {
-          id: audioId,
-          newStatus: updatedAudio.status,
-          newPlayCount: updatedAudio.playCount,
-          nextPlayTime: updatedAudio.nextPlayTime
-        });
-
+        
         return updatedAudio;
       });
 
       return { audioList: updatedList };
     });
 
-    // Check if the audio's status was updated to COMPLETED
-    const updatedAudio = get().audioList.find(a => a.id === audioId);
-    if (updatedAudio?.status === 'COMPLETED') {
-      setCurrentlyPlaying(null);
-      set({ isPlaying: false });
-    } else if (updatedAudio?.status === 'WAITING_FIRST' || updatedAudio?.status === 'WAITING_SECOND') {
-      // If we're in a waiting state, clear the currently playing
-      setCurrentlyPlaying(null);
-      set({ isPlaying: false });
-    }
+    // Clear currently playing state
+    const { setCurrentlyPlaying } = get();
+    setCurrentlyPlaying(null);
+    set({ isPlaying: false });
   },
 
   getNextAudioToPlay: () => {
@@ -158,59 +107,39 @@ export const useAudioStore = create<AudioState>((set, get) => ({
     // If something is currently playing, don't play anything else
     if (currentlyPlaying) return null;
 
-    // First, check for any waiting audio that's ready
-    const waitingAudio = audioList.find(audio => 
-      (audio.status === 'WAITING_FIRST' || audio.status === 'WAITING_SECOND') &&
-      audio.nextPlayTime && now >= audio.nextPlayTime
+    // First, check for immediate plays (playIndex 1 or 2)
+    const immediateAudio = audioList.find(audio => 
+      audio.status === 'READY_TO_PLAY' && 
+      audio.playCount === 0 && 
+      (audio.playIndex === 1 || audio.playIndex === 2)
     );
-    if (waitingAudio) {
-      console.log('Found waiting audio ready:', { 
-        id: waitingAudio.id, 
-        status: waitingAudio.status,
-        playCount: waitingAudio.playCount,
-        nextPlayTime: waitingAudio.nextPlayTime
+    
+    if (immediateAudio) {
+      console.log('Found immediate audio to play:', { 
+        id: immediateAudio.id, 
+        playIndex: immediateAudio.playIndex 
       });
-      return waitingAudio;
+      return immediateAudio;
     }
 
-    // Then check for any audio in FIRST_BURST
-    const firstBurstAudio = audioList.find(audio => 
-      audio.status === 'FIRST_BURST'
+    // Then, check for scheduled plays that are ready (time has elapsed)
+    const scheduledAudio = audioList.find(audio => 
+      audio.status === 'READY_TO_PLAY' && 
+      audio.playCount === 0 && 
+      audio.nextPlayTime && 
+      now >= audio.nextPlayTime
     );
-    if (firstBurstAudio) {
-      console.log('Found first burst audio:', { 
-        id: firstBurstAudio.id, 
-        status: firstBurstAudio.status,
-        playCount: firstBurstAudio.playCount
+    
+    if (scheduledAudio) {
+      console.log('Found scheduled audio ready to play:', { 
+        id: scheduledAudio.id, 
+        playIndex: scheduledAudio.playIndex,
+        waitedFor: now - (scheduledAudio.nextPlayTime || 0)
       });
-      return firstBurstAudio;
+      return scheduledAudio;
     }
 
-    // Then check for any audio in SECOND_BURST with play count less than 4
-    const secondBurstAudio = audioList.find(audio => 
-      audio.status === 'SECOND_BURST' && audio.playCount < 4
-    );
-    if (secondBurstAudio) {
-      console.log('Found second burst audio:', { 
-        id: secondBurstAudio.id, 
-        status: secondBurstAudio.status,
-        playCount: secondBurstAudio.playCount
-      });
-      return secondBurstAudio;
-    }
-
-    // Finally, check for any audio ready for its final play with play count of 4
-    const finalAudio = audioList.find(audio => 
-      audio.status === 'FINAL_PLAY' && audio.playCount === 4
-    );
-    if (finalAudio) {
-      console.log('Found final play audio:', { 
-        id: finalAudio.id, 
-        status: finalAudio.status,
-        playCount: finalAudio.playCount
-      });
-    }
-    return finalAudio || null;
+    return null;
   },
 
   setCurrentlyPlaying: (audio) => {

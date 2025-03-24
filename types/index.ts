@@ -10,7 +10,8 @@ export type AudioStatus =
   | 'SECOND_BURST'
   | 'WAITING_SECOND'
   | 'FINAL_PLAY'
-  | 'COMPLETED';
+  | 'COMPLETED'
+  | 'READY_TO_PLAY';
 
 export interface Audio {
   id: string;
@@ -20,6 +21,7 @@ export interface Audio {
   playCount: number;
   nextPlayTime: number | null;
   status: AudioStatus;
+  playIndex?: number; // Position in the sequence (1-6)
 }
 
 export interface Admin {
